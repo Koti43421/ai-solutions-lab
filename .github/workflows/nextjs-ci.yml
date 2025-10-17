@@ -1,4 +1,6 @@
 name: Next.js Testing
+# Lab 4: Deployment Pipelines (CI/CD)
+# This workflow handles automated testing of the Next.js application
 
 on:
   push:
@@ -8,9 +10,9 @@ on:
       - 'components/**'
       - 'lib/**'
       - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'next.config.*'
-      - 'tailwind.config.*'
+      - 'package-lock.json'
+      - 'next.config.js'
+      - 'tailwind.config.js'
   pull_request:
     branches: [ main ]
     paths:
@@ -18,46 +20,58 @@ on:
       - 'components/**'
       - 'lib/**'
       - 'package.json'
-      - 'pnpm-lock.yaml'
+      - 'package-lock.json'
 
 jobs:
+  # Test Job - Runs comprehensive testing
   test:
     name: Test Next.js Application
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      # Checkout the repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      # Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'pnpm'
+          cache: 'npm'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      # Install dependencies
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Install deps (pnpm)
-        run: pnpm install --frozen-lockfile
+      # Run comprehensive test suite
+      - name: Run test suite
+        run: npm test
+        env:
+          # Test environment variables
+          NODE_ENV: test
 
-      - name: Lint (optional)
-        run: pnpm run lint || echo "No ESLint configured, skipping"
+      # Run linting (if ESLint is configured)
+      - name: Run linting
+        run: npm run lint || echo "Linting not configured, skipping..."
+        continue-on-error: true
 
-      - name: Type check (optional)
-        run: pnpm exec tsc --noEmit || echo "No TS config, skipping"
+      # Run type checking (if TypeScript is configured)
+      - name: Type check
+        run: npx tsc --noEmit || echo "TypeScript not configured, skipping..."
+        continue-on-error: true
 
-      - name: Build
-        run: pnpm run build
+      # Build the application
+      - name: Build application
+        run: npm run build
 
+      # Verify build output
       - name: Verify build output
         run: |
           if [ -d ".next" ]; then
-            echo "Build successful"
-            ls -la .next
+            echo "Build successful - .next directory exists"
+            ls -la .next/
           else
-            echo "Build failed - .next not found"
+            echo "Build failed - .next directory not found"
             exit 1
           fi
