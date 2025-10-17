@@ -1,4 +1,6 @@
 name: MLOps Service Testing
+# Lab 4: Deployment Pipelines (CI/CD)
+# This workflow handles automated testing of the Flask MLOps service
 
 on:
   push:
@@ -11,49 +13,61 @@ on:
       - 'mlops-service/**'
 
 jobs:
+  # Test Job - Runs pytest suite from Lab 3
   test:
     name: Test MLOps Service
     runs-on: ubuntu-latest
+
     defaults:
       run:
-        working-directory: mlops-service
+        working-directory: ./mlops-service
 
     steps:
-      - uses: actions/checkout@v4
+      # Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      # Set up Python
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.9'
 
+      # Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-flask
 
-      - name: Run pytest suite (ok if none yet)
+      # Run pytest suite (from Lab 3)
+      - name: Run tests
         run: |
-          echo "Running pytest…"
-          pytest -v || (echo "No tests yet, skipping" && exit 0)
+          echo "Running MLOps service tests..."
+          pytest test_app.py -v --tb=short
         env:
+          # Test environment variables
           FLASK_ENV: testing
           TESTING: true
 
-      # Start Flask without reloader, hit /health, then stop
-      - name: Test Flask startup + health
+      # Test Flask app can start
+      - name: Test Flask startup
         run: |
-          python - <<'PY' &
-from app import app
-app.run(host='0.0.0.0', port=5001, debug=False)
-PY
-          SRV_PID=$!
-          sleep 4
-          curl -fsS http://localhost:5001/health
-          kill $SRV_PID || true
+          echo "Testing Flask service startup..."
+          timeout 10s python app.py &
+          sleep 5
 
-      - name: Basic dependency security scan (optional)
+          # Test health endpoint
+          curl -f http://localhost:5001/health || {
+            echo "Health check failed"
+            exit 1
+          }
+
+          echo "Flask service starts successfully"
+
+      # Security scan
+      - name: Security scan
         run: |
+          echo "Running basic security checks..."
           pip install safety
-          safety check || echo "Warnings found (informational)"
+          safety check || echo "Security warnings found, review before production"
         continue-on-error: true
