@@ -1,66 +1,34 @@
-name: CI / Flask – Pytest
+import pytest
+from app import app as flask_app
 
-on:
-  push:
-    branches: [ main, develop, test-cicd ]
-    paths:
-      - 'mlops-service/**'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'mlops-service/**'
+@pytest.fixture()
+def client():
+    flask_app.config.update(TESTING=True)
+    return flask_app.test_client()
 
-jobs:
-  test:
-    name: Flask – Pytest
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./mlops-service
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
-          # Ensure pytest is present even if not in requirements.txt
-          pip install pytest pytest-flask
-
-      # Create a minimal smoke test if you don't have any tests yet
-      - name: Ensure at least one test exists
-        run: |
-          if ! ls -1 *_test.py test_*.py 2>/dev/null | grep -q .; then
-            cat > test_smoke.py << 'PY'
-import json
-from app import app
-
-def test_health():
-    app.testing = True
-    c = app.test_client()
-    r = c.get("/health")
+def test_health_ok(client):
+    r = client.get("/health")
     assert r.status_code == 200
     data = r.get_json()
-    assert data.get("service") == "mlops-service"
-PY
-          fi
+    assert data["status"] == "healthy"
 
-      - name: Run tests
-        run: pytest -v
+def test_metrics_endpoint(client):
+    r = client.get("/metrics")
+    # Prometheus endpoint should respond with text; presence of "# HELP" is enough
+    assert r.status_code == 200
+    assert b"# HELP" in r.data
 
-      # (Optional) Quick startup probe
-      - name: Probe Flask startup
-        run: |
-          python app.py &
-          PID=$!
-          sleep 3
-          curl -fsS http://localhost:5001/health || (echo "Health failed"; kill $PID; exit 1)
-          kill $PID || true
-        continue-on-error: true
+def test_track_happy_path(client):
+    payload = {
+        "business_id": "demo",
+        "response_time_ms": 123,
+        "tokens_used": 10,
+        "api_cost_usd": 0.001,
+        "model_name": "gpt-x",
+        "intent_detected": "general",
+        "response_type": "text",
+        "appointment_requested": False,
+        "human_handoff_requested": False,
+    }
+    r = client.post("/track", json=payload)
+    assert r.status_code in (200, 201)
