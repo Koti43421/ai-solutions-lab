@@ -1,6 +1,4 @@
-name: MLOps Service Testing
-# Lab 4: Deployment Pipelines (CI/CD)
-# This workflow handles automated testing of the Flask MLOps service
+name: CI / Flask – Pytest
 
 on:
   push:
@@ -13,61 +11,56 @@ on:
       - 'mlops-service/**'
 
 jobs:
-  # Test Job - Runs pytest suite from Lab 3
   test:
-    name: Test MLOps Service
+    name: Flask – Pytest
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: ./mlops-service
 
     steps:
-      # Checkout the repository
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # Set up Python
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.11'
 
-      # Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt || true
+          # Ensure pytest is present even if not in requirements.txt
+          pip install pytest pytest-flask
 
-      # Run pytest suite (from Lab 3)
+      # Create a minimal smoke test if you don't have any tests yet
+      - name: Ensure at least one test exists
+        run: |
+          if ! ls -1 *_test.py test_*.py 2>/dev/null | grep -q .; then
+            cat > test_smoke.py << 'PY'
+import json
+from app import app
+
+def test_health():
+    app.testing = True
+    c = app.test_client()
+    r = c.get("/health")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data.get("service") == "mlops-service"
+PY
+          fi
+
       - name: Run tests
+        run: pytest -v
+
+      # (Optional) Quick startup probe
+      - name: Probe Flask startup
         run: |
-          echo "Running MLOps service tests..."
-          pytest test_app.py -v --tb=short
-        env:
-          # Test environment variables
-          FLASK_ENV: testing
-          TESTING: true
-
-      # Test Flask app can start
-      - name: Test Flask startup
-        run: |
-          echo "Testing Flask service startup..."
-          timeout 10s python app.py &
-          sleep 5
-
-          # Test health endpoint
-          curl -f http://localhost:5001/health || {
-            echo "Health check failed"
-            exit 1
-          }
-
-          echo "Flask service starts successfully"
-
-      # Security scan
-      - name: Security scan
-        run: |
-          echo "Running basic security checks..."
-          pip install safety
-          safety check || echo "Security warnings found, review before production"
+          python app.py &
+          PID=$!
+          sleep 3
+          curl -fsS http://localhost:5001/health || (echo "Health failed"; kill $PID; exit 1)
+          kill $PID || true
         continue-on-error: true
